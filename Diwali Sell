@@ -1,0 +1,211 @@
+// Diwali Shop - Single-file React + instructions // ------------------------------------------------ // This document contains a complete single-file React frontend (App.jsx) and // a small Node/Express backend (server.js) for PayPal order creation/capture. // It's designed as a starting point you can run locally and then deploy. // IMPORTANT: Replace PAYPAL_CLIENT_ID and server-side PAYPAL_CLIENT_SECRET with your own keys.
+
+/* How to use
+
+1. Frontend (React) - uses Tailwind classes. You can paste App.jsx into a Vite or Create React App project and ensure Tailwind is configured.
+
+
+2. Backend (server.js) - simple Express app that talks to PayPal's REST API. Install dependencies: npm i express axios dotenv @paypal/checkout-server-sdk
+
+
+3. Set env variables in .env: PAYPAL_CLIENT_ID=Acrbg7p4034Ar9tele21 PAYPAL_CLIENT_SECRET=EBvW160g9JOvkl9hC3UV_nmypWfDbReO0W Oras
+
+c5J.JOtLszRRruHWJZ2BZXyqh8vqRT7ecp-3m_Kpa PORT=4000
+
+
+4. Run backend: node server.js
+
+
+5. Start frontend dev server and open the app. Replace frontend PAYPAL_CLIENT_ID in the HTML <script> src for PayPal with your PayPal client id.
+
+
+
+Security note: Never push your PAYPAL_CLIENT_SECRET to public repos. Use server-side env variables and secure hosting.
+
+
+---
+
+FILES INSIDE THIS DOC
+
+App.jsx (React single-file app)
+
+server.js (Node/Express backend for PayPal)
+
+.env.example
+
+
+*/
+
+// ----------------------- App.jsx ----------------------- // Paste this into src/App.jsx in a Vite/CRA React project.
+
+import React, { useState, useEffect } from 'react';
+
+// Sample product catalog pre-filled (Diwali offers). You can add/modify items here. const PRODUCTS = [ { id: 'p1', title: 'LED Decorative Lights (10m)', price: 499, image: '', stock: 50 }, { id: 'p2', title: 'Diya Set (12 pcs)', price: 199, image: '', stock: 120 }, { id: 'p3', title: 'Rangoli Powder (Multi-color)', price: 149, image: '', stock: 200 }, { id: 'p4', title: 'Traditional Sweets Box (1kg)', price: 799, image: '', stock: 80 }, { id: 'p5', title: 'Men Kurta Set', price: 1299, image: '', stock: 40 }, { id: 'p6', title: 'Women Designer Saree', price: 2299, image: '', stock: 30 }, { id: 'p7', title: 'Decorative Lanterns (2 pcs)', price: 349, image: '', stock: 90 }, { id: 'p8', title: 'Gift Hampers (Diwali Special)', price: 999, image: '', stock: 60 }, { id: 'p9', title: 'Eco-friendly Pooja Thali', price: 299, image: '', stock: 110 }, { id: 'p10', title: 'Kids Ethnic Wear', price: 699, image: '', stock: 70 }, // -- add more items as you like -- ];
+
+function currency(n) { return ₹${n.toFixed(2)}; }
+
+export default function App() { const [products, setProducts] = useState(PRODUCTS); const [cart, setCart] = useState(() => { try { return JSON.parse(localStorage.getItem('diwali_cart')) || {}; } catch { return {}; } }); const [checkoutStatus, setCheckoutStatus] = useState(null);
+
+useEffect(() => { localStorage.setItem('diwali_cart', JSON.stringify(cart)); }, [cart]);
+
+const addToCart = (productId) => { setCart(prev => { const copy = { ...prev }; copy[productId] = (copy[productId] || 0) + 1; return copy; }); };
+
+const removeFromCart = (productId) => { setCart(prev => { const copy = { ...prev }; if (!copy[productId]) return copy; copy[productId] -= 1; if (copy[productId] <= 0) delete copy[productId]; return copy; }); };
+
+const clearCart = () => setCart({});
+
+const cartItems = Object.entries(cart).map(([id, qty]) => { const p = products.find(x => x.id === id); return { ...p, qty }; });
+
+const subtotal = cartItems.reduce((s, it) => s + it.price * it.qty, 0); const shipping = subtotal > 1999 ? 0 : 99; const total = subtotal + shipping;
+
+// PayPal: when the user clicks the PayPal button, the PayPal JS will call // our backend to create an order. We only include the placeholder script in HTML // and show a JS-based button below when SDK is loaded. For the demo, we'll // dynamically load PayPal's SDK using the CLIENT ID placeholder.
+
+useEffect(() => { // load PayPal SDK only once if (window.paypal) return; const PAYPAL_CLIENT_ID = '<REPLACE_WITH_YOUR_PAYPAL_CLIENT_ID>'; // <<-- replace before using const s = document.createElement('script'); s.src = https://www.paypal.com/sdk/js?client-id=${PAYPAL_CLIENT_ID}&currency=INR; s.async = true; s.onload = () => console.log('PayPal SDK loaded'); document.body.appendChild(s); }, []);
+
+useEffect(() => { if (!window.paypal) return; // render PayPal buttons into container const container = document.getElementById('paypal-button-container'); if (!container) return; // clear previous render container.innerHTML = '';
+
+window.paypal.Buttons({
+  createOrder: function (data, actions) {
+    // Tell backend to create order with cart details
+    return fetch('/api/create-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: cartItems, subtotal, shipping, total })
+    })
+    .then(res => res.json())
+    .then(data => data.orderID)
+    .catch(err => { console.error(err); setCheckoutStatus('Order creation failed'); });
+  },
+  onApprove: function (data, actions) {
+    // Capture order on the server
+    return fetch('/api/capture-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderID: data.orderID })
+    })
+    .then(res => res.json())
+    .then(details => {
+      setCheckoutStatus('Payment successful. Thank you!');
+      clearCart();
+    })
+    .catch(err => { console.error(err); setCheckoutStatus('Payment capture failed'); });
+  },
+  onError: function (err) {
+    console.error(err);
+    setCheckoutStatus('Payment error');
+  }
+}).render('#paypal-button-container');
+
+}, [cart]);
+
+return ( <div className="min-h-screen bg-gradient-to-b from-yellow-50 to-white p-6"> <header className="max-w-6xl mx-auto flex items-center justify-between mb-6"> <h1 className="text-3xl font-bold">Diwali Dhamaka — Demo Shop</h1> <div className="text-right"> <div className="text-sm">Simple Flipkart-style demo</div> <div className="font-semibold">Fast checkout — PayPal demo</div> </div> </header>
+
+<main className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6">
+    <section className="md:col-span-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {products.map(p => (
+          <div key={p.id} className="p-4 bg-white rounded-2xl shadow-sm">
+            <div className="h-40 bg-gray-100 rounded mb-3 flex items-center justify-center">{p.image ? <img src={p.image} alt={p.title} /> : <span className="text-gray-400">Image</span>}</div>
+            <h3 className="font-semibold">{p.title}</h3>
+            <div className="mt-2">{currency(p.price)}</div>
+            <div className="text-sm text-gray-500">Stock: {p.stock}</div>
+            <div className="mt-3 flex gap-2">
+              <button onClick={() => addToCart(p.id)} className="px-3 py-2 rounded-lg bg-blue-600 text-white">Add to cart</button>
+              <button onClick={() => { setProducts(prev => prev.filter(x => x.id !== p.id)); }} className="px-3 py-2 rounded-lg border">Remove</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <aside className="bg-white p-4 rounded-2xl shadow-sm">
+      <h2 className="font-semibold text-lg">Cart</h2>
+      {cartItems.length === 0 ? (
+        <div className="text-gray-500 mt-4">Your cart is empty.</div>
+      ) : (
+        <div className="mt-3 space-y-3">
+          {cartItems.map(it => (
+            <div key={it.id} className="flex items-center justify-between">
+              <div>
+                <div className="font-medium">{it.title}</div>
+                <div className="text-sm text-gray-500">{it.qty} × {currency(it.price)}</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => removeFromCart(it.id)} className="px-2 py-1 border rounded">-</button>
+                <div className="w-16 text-right">{currency(it.price * it.qty)}</div>
+              </div>
+            </div>
+          ))}
+
+          <div className="border-t pt-3 text-right">
+            <div className="flex justify-between"><span>Subtotal</span><span>{currency(subtotal)}</span></div>
+            <div className="flex justify-between"><span>Shipping</span><span>{currency(shipping)}</span></div>
+            <div className="flex justify-between font-semibold"><span>Total</span><span>{currency(total)}</span></div>
+          </div>
+
+          <div id="paypal-button-container" className="mt-3"></div>
+
+          <div className="mt-2 text-sm text-gray-600">Status: {checkoutStatus || 'Not checked out'}</div>
+
+        </div>
+      )}
+
+      <div className="mt-4 flex gap-2">
+        <button onClick={() => setCart({})} className="px-3 py-2 border rounded">Clear cart</button>
+        <a href="#" onClick={(e)=>{e.preventDefault(); window.scrollTo({top:0, behavior:'smooth'});}} className="px-3 py-2 bg-green-600 text-white rounded">Continue shopping</a>
+      </div>
+    </aside>
+  </main>
+
+  <footer className="max-w-6xl mx-auto mt-8 text-center text-sm text-gray-500">
+    Built for demo purposes — replace credentials before going live.
+  </footer>
+</div>
+
+); }
+
+// ----------------------- server.js ----------------------- // Node/Express backend. Save as server.js. This uses PayPal's Checkout Server SDK. // npm i express dotenv @paypal/checkout-server-sdk cors
+
+/* server.js */
+
+/* // Example server.js const express = require('express'); const cors = require('cors'); const dotenv = require('dotenv'); const paypal = require('@paypal/checkout-server-sdk');
+
+dotenv.config(); const app = express(); app.use(cors()); app.use(express.json());
+
+const payPalClient = (() => { const env = new paypal.core.SandboxEnvironment(process.env.PAYPAL_CLIENT_ID, process.env.PAYPAL_CLIENT_SECRET); return new paypal.core.PayPalHttpClient(env); })();
+
+app.post('/api/create-order', async (req, res) => { try { const { items, subtotal, shipping, total } = req.body; const request = new paypal.orders.OrdersCreateRequest(); request.prefer('return=representation'); request.requestBody({ intent: 'CAPTURE', purchase_units: [{ amount: { currency_code: 'INR', value: total.toFixed(2), breakdown: { item_total: { currency_code: 'INR', value: subtotal.toFixed(2) }, shipping: { currency_code: 'INR', value: shipping.toFixed(2) } } }, items: items.map(i => ({ name: i.title, unit_amount: { currency_code: 'INR', value: i.price.toFixed(2) }, quantity: i.qty.toString() })) }] });
+
+const order = await payPalClient.execute(request);
+res.json({ orderID: order.result.id });
+
+} catch (err) { console.error(err); res.status(500).json({ error: 'create order failed' }); } });
+
+app.post('/api/capture-order', async (req, res) => { try { const { orderID } = req.body; const request = new paypal.orders.OrdersCaptureRequest(orderID); request.requestBody({}); const capture = await payPalClient.execute(request); res.json({ status: 'captured', details: capture.result }); } catch (err) { console.error(err); res.status(500).json({ error: 'capture failed' }); } });
+
+const PORT = process.env.PORT || 4000; app.listen(PORT, () => console.log('Server listening on', PORT)); */
+
+// ----------------------- .env.example ----------------------- // PAYPAL_CLIENT_ID=YourPayPalClientID // PAYPAL_CLIENT_SECRET=YourPayPalSecret // PORT=4000
+
+/* Notes & Next steps
+
+Replace the placeholder in App.jsx where indicated with your PayPal client id or modify index.html to load the SDK dynamically with the client id variable.
+
+For production, use PayPal's Live credentials and switch from SandboxEnvironment to LiveEnvironment on the server.
+
+Add persistent product storage (database) for a real store.
+
+Add user accounts, order history, address forms, tax handling, and inventory checks before placing orders.
+
+
+Want me to:
+
+(A) convert this into a 1-click deployable repo (GitHub Actions / Render) OR
+
+(B) give you a ZIP with files ready to run locally OR
+
+(C) add more product items and categories now?
+
+
+Choose A, B or C and I will prepare the next step for you. */
+
